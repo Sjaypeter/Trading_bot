@@ -81,7 +81,14 @@ class TradingBotGUI:
         self.auto_update_thread = threading.Thread(target=self.auto_update, daemon=True)
         self.auto_update_thread.start()
 
-        
+    def add_equity(self):
+        symbol = self.symbol_entry.get().upper()
+        levels = self.levels_entry.get()
+        drawdown= self.drawdown_entry.get()
+
+
+
+
 
 
 
