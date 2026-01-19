@@ -4,25 +4,79 @@ import json
 import time
 import threading
 import random
+import openai
 import alpaca_trade_api as tradeapi
 
 
 DATA_FILE = "equities.json"
 
-key = "PK3HT4WCRZKV4ZZNGZVDKEAWUI"
-secret_key = "8GVyssecVmJpiiSNNJCvx4QtpPp1MMjvj2EemVSxVioe"
+key = " #Alpaca key"
+secret_key = "#Alpaca secret key"
 BASE_URL = "https://paper-api.alpaca.markets/"
 
 api = tradeapi.REST(key, secret_key, BASE_URL, api_version="v2")
 
 
+def fetch_portfolio():
+    positions = api.list_positions()
+    portfolio = []
+    for pos in positions:
+        portfolio.append({
+            'symbol': pos.symbol,
+            'qty': pos.qty,
+            'entry_price': pos.avg_entry_price,
+            'current_price': pos.current_price,
+            'unrealized_pl': pos.unrealized_pl,
+            'side': 'buy'
+        })
+    return portfolio  # Fixed: moved return outside the loop
+
+    
+def fetch_open_orders():
+    orders = api.list_orders(status='open')
+    open_orders = []
+    for order in orders:
+        open_orders.append({
+            'symbol': order.symbol,
+            'qty': order.qty,
+            'limit_price': order.limit_price,
+            'side': 'long'
+        })
+    return open_orders  # Fixed: added missing return statement
+
+
 def fetch_mock_api(symbol):
     return {
-        "price": 100 + random.uniform(-10, 10)  # Add some variation
+        "price": 100 + random.uniform(-10, 10)
     }
 
-def mock_chatgpt_response(message):
-    return f"Mock response to: {message}"
+
+def chatgpt_response(message):
+    portfolio_data = fetch_portfolio()
+    open_orders = fetch_open_orders()
+
+    pre_prompt = f"""
+    You are an AI Portfolio Manager responsible for analyzing my portfolio.
+    Your tasks are the following:
+    1.) Evaluate risk exposures of my current holdings
+    2.) Analyze my open limit orders and their potential impact
+    3.) Provide insights into portfolio health, diversification, trade adj. etc.
+    4.) Speculate on the market outlook based on current market conditions
+    5.) Identify potential market risks and suggest risk management strategies
+
+    Here is my portfolio: {portfolio_data}
+
+    Here are my open orders {open_orders}
+
+    Overall, answer the following questions with priority having that background: {message}"""
+
+    response = openai.ChatCompletion.create(
+        model="gpt-4", 
+        messages=[{"role": "system", "content": pre_prompt}],
+        api_key=""  # OpenAI API key here
+    )
+    return response['choices'][0]['message']['content']
+
 
 class TradingBotGUI:
 
@@ -41,18 +95,17 @@ class TradingBotGUI:
         self.symbol_entry.grid(row=0, column=1)
 
         tk.Label(self.form_frame, text="Levels:").grid(row=0, column=2)
-        self.levels_entry = tk.Entry(self.form_frame)  # Fixed variable name
-        self.levels_entry.grid(row=0, column=3)  # Fixed row to 0
+        self.levels_entry = tk.Entry(self.form_frame)
+        self.levels_entry.grid(row=0, column=3)
 
         tk.Label(self.form_frame, text="Drawdown%:").grid(row=0, column=4)
-        self.drawdown_entry = tk.Entry(self.form_frame)  # Fixed variable name
-        self.drawdown_entry.grid(row=0, column=5)  # Fixed row to 0
+        self.drawdown_entry = tk.Entry(self.form_frame)
+        self.drawdown_entry.grid(row=0, column=5)
 
         self.add_button = tk.Button(self.form_frame, text="Add Equity", command=self.add_equity)
         self.add_button.grid(row=0, column=6)
 
         # Table to track the traded equities
-        # Fixed: made "status" lowercase to match the column definition
         self.tree = ttk.Treeview(root, columns=("Symbol", "Position", "Entry Price", "Levels", "Status"), show="headings")
         for col in ["Symbol", "Position", "Entry Price", "Levels", "Status"]:
             self.tree.heading(col, text=col)
@@ -100,7 +153,6 @@ class TradingBotGUI:
         drawdown = float(drawdown) / 100
         entry_price = fetch_mock_api(symbol)['price']
 
-        # Fixed: added missing closing parenthesis
         level_prices = {i+1: round(entry_price * (1 - drawdown * (i+1)), 2) for i in range(levels)}
 
         self.equities[symbol] = {
@@ -150,23 +202,22 @@ class TradingBotGUI:
         if not message:
             return
         
-        response = mock_chatgpt_response(message)
+        try:
+            response = chatgpt_response(message)
+        except Exception as e:
+            response = f"Error getting AI response: {e}"
 
         self.chat_output.config(state=tk.NORMAL)
         self.chat_output.insert(tk.END, f"You: {message}\n{response}\n\n")
         self.chat_output.config(state=tk.DISABLED)
         self.chat_input.delete(0, tk.END)
 
-
-
     def fetch_alpaca_data(self, symbol):
         try:
             barset = api.get_latest_trade(symbol)
-            return {"price":barset.price}
+            return {"price": barset.price}
         except Exception as e:
-            return {"price":-1}
-
-
+            return {"price": -1}
 
     def check_existing_orders(self, symbol, price):
         try:
@@ -174,62 +225,83 @@ class TradingBotGUI:
             for order in orders:
                 if float(order.limit_price) == price:
                     return True
+            return False  
         except Exception as e:
             messagebox.showerror("API Error", f"Error Checking Orders {e}")
             return False
         
-    def get_max_entry_price(self,symbol):
+    def get_max_entry_price(self, symbol):
         try:
-            orders = api.list_orders(status="filled",limit=50)
+            orders = api.list_orders(status="filled", limit=50)
             prices = [float(order.filled_avg_price) for order in orders if order.filled_avg_price and order.symbol == symbol]
             return max(prices) if prices else -1
         except Exception as e:
             messagebox.showerror("API Error", f"Error Fetching Orders {e}")
-            return 0
+            return -1  
         
-    def trade_system(self):
-        for symbol, data in self.equities.items():
-            if data['status'] == 'On':
+    def trade_systems(self):
+        # Create a copy of the items to avoid RuntimeError if dict changes during iteration
+        equities_copy = list(self.equities.items())
+        
+        for symbol, data in equities_copy:
+            # Check if symbol still exists in equities
+            if symbol not in self.equities:
+                continue
+                
+            if data['status'] == 'on':
                 position_exists = False
                 try:
                     position = api.get_position(symbol)
                     entry_price = self.get_max_entry_price(symbol)
                     position_exists = True
                 except Exception as e:
-                    api.submit_order(
-                        symbol=symbol,
-                        qty=1,
-                        side="buy",
-                        type="market",
-                        time_in_force="gtc"
-                    )
-                    messagebox.showinfo("Order Placed", f"Initial Order placed for {symbol}")
-                    time.sleep(2)
-                    entry_price = self.get_max_entry_price(symbol)
-                print(entry_price)
-                level_prices = {i+1:round(entry_price*(1-data['drawdown']*(i+1)), 2) for i in range(len(data['levels']))}
+                    try:
+                        api.submit_order(
+                            symbol=symbol,
+                            qty=1,
+                            side="buy",
+                            type="market",
+                            time_in_force="gtc"
+                        )
+                        messagebox.showinfo("Order Placed", f"Initial Order placed for {symbol}")
+                        time.sleep(2)
+                        entry_price = self.get_max_entry_price(symbol)
+                    except Exception as order_error:
+                        print(f"Error placing initial order for {symbol}: {order_error}")
+                        continue
+                
+                # Skip if entry price is invalid
+                if entry_price <= 0:
+                    print(f"Invalid entry price for {symbol}: {entry_price}")
+                    continue
+                    
+                print(f"Entry price for {symbol}: {entry_price}")
+                level_prices = {i+1: round(entry_price*(1-data['drawdown']*(i+1)), 2) for i in range(len(data['levels']))}
                 existing_levels = self.equities.get(symbol, {}).get('levels', {})
+                
                 for level, price in level_prices.items():
                     if level not in existing_levels and -level not in existing_levels:
                         existing_levels[level] = price
 
-                self.equities[symbol]['entry_price'] = entry_price
-                self.equities[symbol]['levels'] = existing_levels
-                self.equities[symbol]['position'] = 1
+                # Check again if symbol still exists before updating
+                if symbol in self.equities:
+                    self.equities[symbol]['entry_price'] = entry_price
+                    self.equities[symbol]['levels'] = existing_levels
+                    self.equities[symbol]['position'] = 1
 
-                for level,prices in level_prices.items():
-                    if level in self.equities[symbol]['levels']:
-                        self.place_order(symbol, price, level)
+                    for level, price in level_prices.items():
+                        if level in self.equities[symbol]['levels']:
+                            self.place_order(symbol, price, level)
 
+                    self.save_equities()
+                    self.refresh_table()
 
-            self.save_equities()
-            self.refresh_table()
-        else:
-            return
-        
-    
     def place_order(self, symbol, price, level):
-        if -level in self.equities[symbol]['levels'] or '-1' in self.equities[symbol]['level'].keys()
+        # Check if symbol still exists
+        if symbol not in self.equities:
+            return
+            
+        if -level in self.equities[symbol]['levels'] or '-1' in self.equities[symbol]['levels'].keys():
             return
 
         try:
@@ -241,20 +313,18 @@ class TradingBotGUI:
                 time_in_force='gtc',
                 limit_price=price
             )
-            self.equities[symbol]['levels'][-level] = price
-            del self.equities[symbol]['levels']['level']
-            price(f"Placed order for {symbol}@{price}")
+            # Check again if symbol still exists before updating
+            if symbol in self.equities and level in self.equities[symbol]['levels']:
+                self.equities[symbol]['levels'][-level] = price
+                del self.equities[symbol]['levels'][level]
+                print(f"Placed order for {symbol}@{price}")
         except Exception as e:
-            messagebox.showerror("Order Error", f"Error placing order {e}")
-    
-    
- 
+            print(f"Error placing order for {symbol}: {e}")
 
     def refresh_table(self):
         for row in self.tree.get_children():
             self.tree.delete(row)
 
-        # Fixed: changed item() to items()
         for symbol, data in self.equities.items():
             self.tree.insert("", "end", values=(
                 symbol,
@@ -267,16 +337,14 @@ class TradingBotGUI:
     def auto_update(self):
         while self.running:
             time.sleep(5)
-            self.update_prices()
+            self.trade_systems()
 
     def update_prices(self):
         """Update prices for active equities"""
         for symbol, data in self.equities.items():
             if data['status'] == 'on':
-                # Simulate price updates
                 current_price = fetch_mock_api(symbol)['price']
-                # You can add logic here to check levels and update positions
-        self.root.after(0, self.refresh_table)  # Update GUI in main thread
+        self.root.after(0, self.refresh_table)
 
     def save_equities(self):
         with open(DATA_FILE, 'w') as f:
@@ -293,6 +361,7 @@ class TradingBotGUI:
         self.running = False
         self.save_equities()
         self.root.destroy()
+
 
 if __name__ == '__main__':
     root = tk.Tk()
