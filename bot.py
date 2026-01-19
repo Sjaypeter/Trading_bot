@@ -156,6 +156,17 @@ class TradingBotGUI:
         self.chat_output.config(state=tk.DISABLED)
         self.chat_input.delete(0, tk.END)
 
+
+
+    def fetch_alpaca_data(self, symbol):
+        try:
+            barset = api.get_latest_trade(symbol)
+            return {"price":barset.price}
+        except Exception as e:
+            return {"price":-1}
+
+
+
     def check_existing_orders(self, symbol, price):
         try:
             orders = api.list_orders(status='open', symbols=symbol)
@@ -165,6 +176,16 @@ class TradingBotGUI:
         except Exception as e:
             messagebox.showerror("API Error", f"Error Checking Orders {e}")
             return False
+        
+    def get_max_entry_price(self,symbol):
+        try:
+            orders = api.list_orders(status="filled", symbol=symbol,limit=50)
+            prices = [float(order.filled_avg_price) for order in orders if order.filled_avg_price]
+            return max(prices) if prices else -1
+        except Exception as e:
+            messagebox.showerror("API Error", f"Error Fetching Orders {e}")
+            return 0
+    
     
  
 
