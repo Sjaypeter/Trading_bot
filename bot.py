@@ -11,7 +11,7 @@ DATA_FILE = "equities.json"
 
 key = "PK3HT4WCRZKV4ZZNGZVDKEAWUI"
 secret_key = "8GVyssecVmJpiiSNNJCvx4QtpPp1MMjvj2EemVSxVioe"
-BASE_URL = "https://paper-api.alpaca.markets/v2"
+BASE_URL = "https://paper-api.alpaca.markets/"
 
 api = tradeapi.REST(key, secret_key, BASE_URL, api_version="v2")
 
@@ -107,6 +107,7 @@ class TradingBotGUI:
             "position": 0,
             "entry_price": entry_price,
             "levels": level_prices,
+            "drawdown": drawdown,
             "status": "off"
         }
         self.save_equities()
@@ -179,12 +180,52 @@ class TradingBotGUI:
         
     def get_max_entry_price(self,symbol):
         try:
-            orders = api.list_orders(status="filled", symbol=symbol,limit=50)
-            prices = [float(order.filled_avg_price) for order in orders if order.filled_avg_price]
+            orders = api.list_orders(status="filled",limit=50)
+            prices = [float(order.filled_avg_price) for order in orders if order.filled_avg_price and order.symbol == symbol]
             return max(prices) if prices else -1
         except Exception as e:
             messagebox.showerror("API Error", f"Error Fetching Orders {e}")
             return 0
+        
+    def trade_system(self):
+        for symbol, data in self.equities.items():
+            if data['status'] == 'On':
+                position_exists = False
+                try:
+                    position = api.get_position(symbol)
+                    entry_price = self.get_max_entry_price(symbol)
+                    position_exists = True
+                except Exception as e:
+                    api.submit_order(
+                        symbol=symbol,
+                        qty=1,
+                        side="buy",
+                        type="market",
+                        time_in_force="gtc"
+                    )
+                    messagebox.showinfo("Order Placed", f"Initial Order placed for {symbol}")
+                    time.sleep(2)
+                    entry_price = self.get_max_entry_price(symbol)
+                print(entry_price)
+                level_prices = {i+1:round(entry_price*(1-data['drawdown']*(i+1)), 2) for i in range(len(data['levels']))}
+                existing_levels = self.equities.get(symbol, {}).get('levels', {})
+                for level, price in level_prices.items():
+                    if level not in existing_levels and -level not in existing_levels:
+                        existing_levels[level] = price
+
+                self.equities[symbol]['entry_price'] = entry_price
+                self.equities[symbol]['levels'] = existing_levels
+                self.equities[symbol]['position'] = 1
+
+                for level,prices in level_prices.items():
+                    if level in self.equities[symbol]['levels']:
+                        self.place_order(symbol, price, level)
+
+
+            self.save_equities()
+            self.refresh_table()
+        else:
+            return
     
     
  
