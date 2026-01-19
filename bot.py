@@ -10,7 +10,7 @@ DATA_FILE = "equities.json"
 
 def fetch_mock_api(symbol):
     return {
-        "price" : 100
+        "price": 100 + random.uniform(-10, 10)  # Add some variation
     }
 
 def mock_chatgpt_response(message):
@@ -18,49 +18,47 @@ def mock_chatgpt_response(message):
 
 class TradingBotGUI:
 
-    def __init__(self,root):
+    def __init__(self, root):
         self.root = root
         self.root.title("AI Trading Bot")
         self.equities = self.load_equities()
         self.system_running = False
 
-        self.form_frame = tk.frame(root)
+        self.form_frame = tk.Frame(root)
         self.form_frame.pack(pady=10)
 
-
-        #Form to add a new equity to our trading bot
+        # Form to add a new equity to our trading bot
         tk.Label(self.form_frame, text="Symbol:").grid(row=0, column=0)
         self.symbol_entry = tk.Entry(self.form_frame)
         self.symbol_entry.grid(row=0, column=1)
 
-        tk.Label(self.form_frame,text="Levels:").grid(row=0,column=2)
-        self.symbol_entry = tk.Entry(self.form_frame)
-        self.symbol_entry.grid(row=1, column=3)
+        tk.Label(self.form_frame, text="Levels:").grid(row=0, column=2)
+        self.levels_entry = tk.Entry(self.form_frame)  # Fixed variable name
+        self.levels_entry.grid(row=0, column=3)  # Fixed row to 0
 
-        tk.Label(self.form_frame,text="Drawdown%:").grid(row=0,column=4)
-        self.symbol_entry = tk.Entry(self.form_frame)
-        self.symbol_entry.grid(row=1, column=5)
+        tk.Label(self.form_frame, text="Drawdown%:").grid(row=0, column=4)
+        self.drawdown_entry = tk.Entry(self.form_frame)  # Fixed variable name
+        self.drawdown_entry.grid(row=0, column=5)  # Fixed row to 0
 
         self.add_button = tk.Button(self.form_frame, text="Add Equity", command=self.add_equity)
         self.add_button.grid(row=0, column=6)
 
-        #Table to track the traded equities
-        self.tree = ttk.Treeview(root, columns=("Symbol", "Position", "Entry Price", "Levels", "status"))
+        # Table to track the traded equities
+        # Fixed: made "status" lowercase to match the column definition
+        self.tree = ttk.Treeview(root, columns=("Symbol", "Position", "Entry Price", "Levels", "Status"), show="headings")
         for col in ["Symbol", "Position", "Entry Price", "Levels", "Status"]:
-            self.tree.heading(col,text=col)
+            self.tree.heading(col, text=col)
             self.tree.column(col, width=120)
         self.tree.pack(pady=10)
 
-
-        #Buttons to control the bot
-        self.toggle_system_button = tk.Button(root, text="Toggle Selected System", command=self.toggle_system)
+        # Buttons to control the bot
+        self.toggle_system_button = tk.Button(root, text="Toggle Selected System", command=self.toggle_selected_system)
         self.toggle_system_button.pack(pady=5)
 
         self.remove_button = tk.Button(root, text="Remove Selected Equity", command=self.remove_selected_equity)
         self.remove_button.pack(pady=5)
 
-
-        #AI Component
+        # AI Component
         self.chat_frame = tk.Frame(root)
         self.chat_frame.pack(pady=10)
 
@@ -73,10 +71,10 @@ class TradingBotGUI:
         self.chat_output = tk.Text(root, height=5, width=60, state=tk.DISABLED)
         self.chat_output.pack()
 
-        #Load saved data
+        # Load saved data
         self.refresh_table()
 
-        #Auto-refreshing
+        # Auto-refreshing
         self.running = True
         self.auto_update_thread = threading.Thread(target=self.auto_update, daemon=True)
         self.auto_update_thread.start()
@@ -84,26 +82,32 @@ class TradingBotGUI:
     def add_equity(self):
         symbol = self.symbol_entry.get().upper()
         levels = self.levels_entry.get()
-        drawdown= self.drawdown_entry.get()
+        drawdown = self.drawdown_entry.get()
 
         if not symbol or not levels.isdigit() or not drawdown.replace('.', '', 1).isdigit():
             messagebox.showerror("Error", "Invalid Input")
             return
         
         levels = int(levels)
-        drawdown = float(drawdown) /100
+        drawdown = float(drawdown) / 100
         entry_price = fetch_mock_api(symbol)['price']
 
-        level_prices = {i+1: round(entry_price * (1-drawdown*(i+1), 2)) for i in range(levels)}
+        # Fixed: added missing closing parenthesis
+        level_prices = {i+1: round(entry_price * (1 - drawdown * (i+1)), 2) for i in range(levels)}
 
         self.equities[symbol] = {
-            "position" : 0,
-            "entry_price":entry_price,
+            "position": 0,
+            "entry_price": entry_price,
             "levels": level_prices,
             "status": "off"
         }
         self.save_equities()
         self.refresh_table()
+        
+        # Clear the input fields
+        self.symbol_entry.delete(0, tk.END)
+        self.levels_entry.delete(0, tk.END)
+        self.drawdown_entry.delete(0, tk.END)
 
     def toggle_selected_system(self):
         selected_items = self.tree.selection()
@@ -113,7 +117,7 @@ class TradingBotGUI:
         
         for item in selected_items:
             symbol = self.tree.item(item)['values'][0]
-            self.equities[symbol]['status'] = "On" if self.equities[symbol]['status'] == "off" else "off"
+            self.equities[symbol]['status'] = "on" if self.equities[symbol]['status'] == "off" else "off"
 
         self.save_equities()
         self.refresh_table()
@@ -148,7 +152,8 @@ class TradingBotGUI:
         for row in self.tree.get_children():
             self.tree.delete(row)
 
-        for symbol, data in self.equities.item():
+        # Fixed: changed item() to items()
+        for symbol, data in self.equities.items():
             self.tree.insert("", "end", values=(
                 symbol,
                 data['position'],
@@ -161,6 +166,15 @@ class TradingBotGUI:
         while self.running:
             time.sleep(5)
             self.update_prices()
+
+    def update_prices(self):
+        """Update prices for active equities"""
+        for symbol, data in self.equities.items():
+            if data['status'] == 'on':
+                # Simulate price updates
+                current_price = fetch_mock_api(symbol)['price']
+                # You can add logic here to check levels and update positions
+        self.root.after(0, self.refresh_table)  # Update GUI in main thread
 
     def save_equities(self):
         with open(DATA_FILE, 'w') as f:
@@ -183,11 +197,3 @@ if __name__ == '__main__':
     app = TradingBotGUI(root)
     root.protocol("WM_DELETE_WINDOW", app.on_close)
     root.mainloop()
-    
-
-
-
-
-
-
-
