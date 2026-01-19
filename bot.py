@@ -41,3 +41,13 @@ class TradingBotGUI:
         self.symbol_entry = tk.Entry(self.form_frame)
         self.symbol_entry.grid(row=1, column=5)
 
+        #Table to track the traded equities
+        self.tree = ttk.Treeview(root, columns=("Symbol", "Position", "Entry Price", "Levels", "status"))
+        for col in ["Symbol", "Position", "Entry Price", "Levels", "Status"]:
+            self.tree.heading(col,text=col)
+            self.tree.column(col, width=120)
+        self.tree.pack(pady=10)
+
+
+        #
+
