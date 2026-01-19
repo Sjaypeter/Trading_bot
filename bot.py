@@ -86,6 +86,25 @@ class TradingBotGUI:
         levels = self.levels_entry.get()
         drawdown= self.drawdown_entry.get()
 
+        if not symbol or not levels.isdigit() or not drawdown.replace('.', '', 1).isdigit():
+            messagebox.showerror("Error", "Invalid Input")
+            return
+        
+        levels = int(levels)
+        drawdown = float(drawdown) /100
+        entry_price = fetch_mock_api(symbol)['price']
+
+        level_prices = {i+1: round(entry_price * (1-drawdown*(i+1), 2)) for i in range(levels)}
+
+        self.equities[symbol] = {
+            "position" : 0,
+            "entry_price":entry_price,
+            "levels": level_prices,
+            "status": "off"
+        }
+        self.save_equities()
+        self.refresh_table()
+
 
 
 
