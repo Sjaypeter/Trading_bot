@@ -156,6 +156,33 @@ class TradingBotGUI:
                 str(data['levels']),
                 data['status']
             ))
+
+    def auto_update(self):
+        while self.running:
+            time.sleep(5)
+            self.update_prices()
+
+    def save_equities(self):
+        with open(DATA_FILE, 'w') as f:
+            json.dump(self.equities, f)
+    
+    def load_equities(self):
+        try:
+            with open(DATA_FILE, 'r') as f:
+                return json.load(f) 
+        except (FileNotFoundError, json.JSONDecodeError):
+            return {}
+        
+    def on_close(self):
+        self.running = False
+        self.save_equities()
+        self.root.destroy()
+
+if __name__ == '__main__':
+    root = tk.Tk()
+    app = TradingBotGUI(root)
+    root.protocol("WM_DELETE_WINDOW", app.on_close)
+    root.mainloop()
     
 
 
