@@ -118,7 +118,21 @@ class TradingBotGUI:
         self.save_equities()
         self.refresh_table()
 
+    def remove_selected_equity(self):
+        selected_items = self.tree.selection()
+        if not selected_items:
+            messagebox.showwarning("Warning", "No Equity Selected")
+            return
         
+        for item in selected_items:
+            symbol = self.tree.item(item)['values'][0]
+            if symbol in self.equities:
+                del self.equities[symbol]
+                
+        self.save_equities()
+        self.refresh_table()
+
+    
 
 
 
