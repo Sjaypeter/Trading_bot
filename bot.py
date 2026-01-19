@@ -4,9 +4,17 @@ import json
 import time
 import threading
 import random
+import alpaca_trade_api as tradeapi
 
 
 DATA_FILE = "equities.json"
+
+key = "PK3HT4WCRZKV4ZZNGZVDKEAWUI"
+secret_key = "8GVyssecVmJpiiSNNJCvx4QtpPp1MMjvj2EemVSxVioe"
+BASE_URL = "https://paper-api.alpaca.markets/v2"
+
+api = tradeapi.REST(key, secret_key, BASE_URL, api_version="v2")
+
 
 def fetch_mock_api(symbol):
     return {
@@ -147,6 +155,18 @@ class TradingBotGUI:
         self.chat_output.insert(tk.END, f"You: {message}\n{response}\n\n")
         self.chat_output.config(state=tk.DISABLED)
         self.chat_input.delete(0, tk.END)
+
+    def check_existing_orders(self, symbol, price):
+        try:
+            orders = api.list_orders(status='open', symbols=symbol)
+            for order in orders:
+                if float(order.limit_price) == price:
+                    return True
+        except Exception as e:
+            messagebox.showerror("API Error", f"Error Checking Orders {e}")
+            return False
+    
+ 
 
     def refresh_table(self):
         for row in self.tree.get_children():
