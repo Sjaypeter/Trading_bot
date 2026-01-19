@@ -59,5 +59,29 @@ class TradingBotGUI:
         self.remove_button = tk.Button(root, text="Remove Selected Equity", command=self.remove_selected_equity)
         self.remove_button.pack(pady=5)
 
+
+        #AI Component
+        self.chat_frame = tk.Frame(root)
+        self.chat_frame.pack(pady=10)
+
+        self.chat_input = tk.Entry(self.chat_frame, width=50)
+        self.chat_input.grid(row=0, column=0, padx=5)
+
+        self.send_button = tk.Button(self.chat_frame, text="Send", command=self.send_message)
+        self.send_button.grid(row=0, column=1)
+
+        self.chat_output = tk.Text(root, height=5, width=60, state=tk.DISABLED)
+        self.chat_output.pack()
+
+        #Load saved data
+        self.refresh_table()
+
+        #Auto-refreshing
+        self.running = True
+        self.auto_update_thread = threading.Thread(target=self.auto_update, daemon=True)
+        self.auto_update_thread.start()
+
         
+
+
 
